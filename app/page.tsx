@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   Bell,
   CalendarDays,
@@ -17,7 +17,6 @@ import {
   Star,
   UserRound,
 } from "lucide-react";
-
 
 type Appointment = {
   id: number;
@@ -94,19 +93,46 @@ const appointments: Appointment[] = [
     cover: "cover-beauty",
   },
 ];
+function subscribeToFavorites(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener("freespot-favorites-changed", callback);
 
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("freespot-favorites-changed", callback);
+  };
+}
+
+function getFavoritesSnapshot() {
+  return localStorage.getItem("freespot-favorites") ?? "[]";
+}
+
+function getServerFavoritesSnapshot() {
+  return "[]";
+}
 export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("הכל");
   const [search, setSearch] = useState("");
-  const [favorites, setFavorites] = useState<number[]>([]);
+  const favoritesString = useSyncExternalStore(
+    subscribeToFavorites,
+    getFavoritesSnapshot,
+    getServerFavoritesSnapshot,
+  );
+
+  const favorites = useMemo<number[]>(() => {
+    try {
+      return JSON.parse(favoritesString);
+    } catch {
+      return [];
+    }
+  }, [favoritesString]);
 
   const filteredAppointments = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
     return appointments.filter((appointment) => {
       const categoryMatch =
-        selectedCategory === "הכל" ||
-        appointment.category === selectedCategory;
+        selectedCategory === "הכל" || appointment.category === selectedCategory;
 
       const searchMatch =
         normalizedSearch === "" ||
@@ -119,11 +145,16 @@ export default function HomePage() {
   }, [selectedCategory, search]);
 
   function toggleFavorite(id: number) {
-    setFavorites((current) =>
-      current.includes(id)
-        ? current.filter((favoriteId) => favoriteId !== id)
-        : [...current, id]
+    const updatedFavorites = favorites.includes(id)
+      ? favorites.filter((favoriteId) => favoriteId !== id)
+      : [...favorites, id];
+
+    localStorage.setItem(
+      "freespot-favorites",
+      JSON.stringify(updatedFavorites),
     );
+
+    window.dispatchEvent(new Event("freespot-favorites-changed"));
   }
 
   return (
@@ -213,7 +244,7 @@ export default function HomePage() {
 
         {/* Categories */}
         <section className="mt-7">
-         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-hide sm:mx-0 sm:px-0">
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-hide sm:mx-0 sm:px-0">
             {categories.map((category) => {
               const Icon = category.icon;
               const active = selectedCategory === category.name;
@@ -246,7 +277,7 @@ export default function HomePage() {
               >
                 {filter}
               </button>
-            )
+            ),
           )}
         </section>
 
@@ -384,11 +415,11 @@ export default function HomePage() {
                       </div>
 
                       <Link
-  href={`/appointment/${appointment.id}`}
-  className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-95"
->
-  הזמן עכשיו
-</Link>
+                        href={`/appointment/${appointment.id}`}
+                        className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-95"
+                      >
+                        הזמן עכשיו
+                      </Link>
                     </div>
                   </div>
                 </article>
@@ -423,8 +454,8 @@ export default function HomePage() {
             </h2>
 
             <p className="mt-2 max-w-lg leading-7 text-blue-100">
-              שמור חיפוש ו-FreeSpot תעדכן אותך כשמתפנה תור שמתאים למחיר,
-              למיקום ולזמן שבחרת.
+              שמור חיפוש ו-FreeSpot תעדכן אותך כשמתפנה תור שמתאים למחיר, למיקום
+              ולזמן שבחרת.
             </p>
 
             <button className="mt-6 rounded-2xl bg-white px-5 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-50">
@@ -442,20 +473,29 @@ export default function HomePage() {
             <span className="text-[11px] font-black">בית</span>
           </button>
 
-          <button className="flex flex-col items-center gap-1 text-slate-400">
+          <Link
+            href="/bookings"
+            className="flex flex-col items-center gap-1 text-slate-400"
+          >
             <CalendarDays size={21} />
             <span className="text-[11px] font-bold">הזמנות</span>
-          </button>
+          </Link>
 
-          <button className="flex flex-col items-center gap-1 text-slate-400">
+          <Link
+            href="/favorites"
+            className="flex flex-col items-center gap-1 text-slate-400"
+          >
             <Heart size={21} />
             <span className="text-[11px] font-bold">מועדפים</span>
-          </button>
+          </Link>
 
-          <button className="flex flex-col items-center gap-1 text-slate-400">
+          <Link
+            href="/profile"
+            className="flex flex-col items-center gap-1 text-slate-400"
+          >
             <UserRound size={21} />
             <span className="text-[11px] font-bold">פרופיל</span>
-          </button>
+          </Link>
         </div>
       </nav>
     </main>
