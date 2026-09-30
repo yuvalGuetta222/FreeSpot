@@ -1,63 +1,88 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Clock3, Heart, MapPin, Star } from "lucide-react";
+import {
+  ArrowRight,
+  Clock3,
+  Heart,
+  MapPin,
+  Star,
+} from "lucide-react";
 
 import { appointments } from "../../data/appointments";
-
-function subscribeToFavorites(callback: () => void) {
-  window.addEventListener("storage", callback);
-  window.addEventListener("freespot-favorites-changed", callback);
-
-  return () => {
-    window.removeEventListener("storage", callback);
-    window.removeEventListener("freespot-favorites-changed", callback);
-  };
-}
-
-function getFavoritesSnapshot() {
-  return localStorage.getItem("freespot-favorites") ?? "[]";
-}
-
-function getServerFavoritesSnapshot() {
-  return "[]";
-}
+import { createClient } from "../../lib/supabase/client";
 
 export default function FavoritesPage() {
-  const favoritesString = useSyncExternalStore(
-    subscribeToFavorites,
-    getFavoritesSnapshot,
-    getServerFavoritesSnapshot,
-  );
+  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const favoriteIds = useMemo<number[]>(() => {
-    try {
-      return JSON.parse(favoritesString);
-    } catch {
-      return [];
+  useEffect(() => {
+    async function loadFavorites() {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setIsLoggedIn(false);
+        setLoading(false);
+        return;
+      }
+
+      setIsLoggedIn(true);
+
+      const { data, error } = await supabase
+        .from("favorites")
+        .select("appointment_id");
+
+      if (error) {
+        console.error("Error loading favorites:", error);
+        setLoading(false);
+        return;
+      }
+
+      setFavoriteIds(
+        data.map((favorite) => Number(favorite.appointment_id))
+      );
+
+      setLoading(false);
     }
-  }, [favoritesString]);
 
-  const favoriteAppointments = appointments.filter((appointment) =>
-    favoriteIds.includes(appointment.id),
-  );
+    loadFavorites();
+  }, []);
 
-  function removeFavorite(id: number) {
-    const updatedFavorites = favoriteIds.filter(
-      (favoriteId) => favoriteId !== id,
+  const favoriteAppointments = useMemo(() => {
+    return appointments.filter((appointment) =>
+      favoriteIds.includes(appointment.id)
     );
+  }, [favoriteIds]);
 
-    localStorage.setItem(
-      "freespot-favorites",
-      JSON.stringify(updatedFavorites),
+  async function removeFavorite(id: number) {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("favorites")
+      .delete()
+      .eq("appointment_id", id);
+
+    if (error) {
+      console.error("Error removing favorite:", error);
+      return;
+    }
+
+    setFavoriteIds((current) =>
+      current.filter((favoriteId) => favoriteId !== id)
     );
-
-    window.dispatchEvent(new Event("freespot-favorites-changed"));
   }
 
   return (
-    <main dir="rtl" className="min-h-screen bg-[#f6f8fb] pb-10 text-slate-950">
+    <main
+      dir="rtl"
+      className="min-h-screen bg-[#f6f8fb] pb-10 text-slate-950"
+    >
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center px-4 py-3">
           <Link
@@ -74,11 +99,36 @@ export default function FavoritesPage() {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 pt-5">
-        {favoriteAppointments.length === 0 ? (
+        {loading ? (
+          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
+            <p className="font-black">טוען מועדפים...</p>
+          </section>
+        ) : !isLoggedIn ? (
           <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
             <Heart size={38} className="mx-auto text-slate-300" />
 
-            <h2 className="mt-4 text-xl font-black">עדיין אין לך מועדפים</h2>
+            <h2 className="mt-4 text-xl font-black">
+              צריך להתחבר כדי לראות מועדפים
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-500">
+              המועדפים שלך נשמרים בחשבון וזמינים מכל מכשיר.
+            </p>
+
+            <Link
+              href="/auth"
+              className="mt-5 inline-block rounded-2xl bg-blue-600 px-5 py-3 font-black text-white"
+            >
+              התחבר
+            </Link>
+          </section>
+        ) : favoriteAppointments.length === 0 ? (
+          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
+            <Heart size={38} className="mx-auto text-slate-300" />
+
+            <h2 className="mt-4 text-xl font-black">
+              עדיין אין לך מועדפים
+            </h2>
 
             <p className="mt-2 text-sm text-slate-500">
               תורים שתסמן בלב יופיעו כאן.
@@ -118,12 +168,18 @@ export default function FavoritesPage() {
                     aria-label="הסר מהמועדפים"
                     className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50"
                   >
-                    <Heart size={19} className="fill-red-500 text-red-500" />
+                    <Heart
+                      size={19}
+                      className="fill-red-500 text-red-500"
+                    />
                   </button>
                 </div>
 
                 <div className="mt-4 flex items-center gap-2">
-                  <Star size={15} className="fill-amber-400 text-amber-400" />
+                  <Star
+                    size={15}
+                    className="fill-amber-400 text-amber-400"
+                  />
 
                   <span className="text-sm font-black">
                     {appointment.rating}

@@ -1,6 +1,9 @@
 "use client";
+
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "../lib/supabase/client";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -17,6 +20,7 @@ import {
   Star,
   UserRound,
 } from "lucide-react";
+
 
 type Appointment = {
   id: number;
@@ -44,7 +48,7 @@ const categories = [
   { name: "מסאז׳", icon: Sparkles },
 ];
 
-const appointments: Appointment[] = [
+const fallbackAppointments: Appointment[] = [
   {
     id: 1,
     service: "תספורת גבר",
@@ -93,40 +97,106 @@ const appointments: Appointment[] = [
     cover: "cover-beauty",
   },
 ];
-function subscribeToFavorites(callback: () => void) {
-  window.addEventListener("storage", callback);
-  window.addEventListener("freespot-favorites-changed", callback);
 
-  return () => {
-    window.removeEventListener("storage", callback);
-    window.removeEventListener("freespot-favorites-changed", callback);
-  };
-}
-
-function getFavoritesSnapshot() {
-  return localStorage.getItem("freespot-favorites") ?? "[]";
-}
-
-function getServerFavoritesSnapshot() {
-  return "[]";
-}
 export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("הכל");
   const [search, setSearch] = useState("");
-  const favoritesString = useSyncExternalStore(
-    subscribeToFavorites,
-    getFavoritesSnapshot,
-    getServerFavoritesSnapshot,
-  );
+const router = useRouter();
+const [appointments, setAppointments] =
+  useState<Appointment[]>([]);
+const [favorites, setFavorites] = useState<number[]>([]);
+useEffect(() => {
+  async function loadFavorites() {
+    const supabase = createClient();
 
-  const favorites = useMemo<number[]>(() => {
-    try {
-      return JSON.parse(favoritesString);
-    } catch {
-      return [];
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setFavorites([]);
+      return;
     }
-  }, [favoritesString]);
 
+    const { data, error } = await supabase
+      .from("favorites")
+      .select("appointment_id");
+
+    if (error) {
+      console.error("Error loading favorites:", error);
+      return;
+    }
+
+    setFavorites(
+      data.map((favorite) => Number(favorite.appointment_id))
+    );
+  }
+
+  loadFavorites();
+}, 
+[]);
+useEffect(() => {
+  async function loadAppointments() {
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from("appointments")
+      .select(
+        `
+        id,
+        service,
+        category,
+        business,
+        rating,
+        reviews,
+        time,
+        duration,
+        distance,
+        area,
+        address,
+        price,
+        old_price,
+        urgency
+        `
+      )
+      .eq("is_available", true)
+      .order("id", { ascending: true });
+
+    if (error) {
+      console.error("Error loading appointments:", error);
+      return;
+    }
+
+    const formattedAppointments: Appointment[] = (data ?? []).map(
+      (item) => {
+        const fallback = fallbackAppointments.find(
+          (appointment) => appointment.id === Number(item.id)
+        );
+
+        return {
+          id: Number(item.id),
+          service: item.service,
+          category: item.category,
+          business: item.business,
+          rating: Number(item.rating ?? 0),
+          reviews: Number(item.reviews ?? 0),
+          time: item.time,
+          duration: item.duration,
+          distance: item.distance ?? "",
+          area: item.area ?? "",
+          price: Number(item.price),
+          oldPrice: item.old_price ? Number(item.old_price) : 0,
+          urgency: item.urgency ?? "",
+          cover: fallback?.cover ?? "",
+        };
+      }
+    );
+
+    setAppointments(formattedAppointments);
+  }
+
+  loadAppointments();
+}, []);
   const filteredAppointments = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -142,20 +212,51 @@ export default function HomePage() {
 
       return categoryMatch && searchMatch;
     });
-  }, [selectedCategory, search]);
+  }, [appointments, selectedCategory, search]);
 
-  function toggleFavorite(id: number) {
-    const updatedFavorites = favorites.includes(id)
-      ? favorites.filter((favoriteId) => favoriteId !== id)
-      : [...favorites, id];
+ async function toggleFavorite(id: number) {
+  const supabase = createClient();
 
-    localStorage.setItem(
-      "freespot-favorites",
-      JSON.stringify(updatedFavorites),
-    );
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    window.dispatchEvent(new Event("freespot-favorites-changed"));
+  if (!user) {
+    router.push("/auth");
+    return;
   }
+
+  const isFavorite = favorites.includes(id);
+
+  if (isFavorite) {
+    const { error } = await supabase
+      .from("favorites")
+      .delete()
+      .eq("appointment_id", id);
+
+    if (error) {
+      console.error("Error removing favorite:", error);
+      return;
+    }
+
+    setFavorites((current) =>
+      current.filter((favoriteId) => favoriteId !== id)
+    );
+  } else {
+    const { error } = await supabase
+      .from("favorites")
+      .insert({
+        appointment_id: id,
+      });
+
+    if (error) {
+      console.error("Error adding favorite:", error);
+      return;
+    }
+
+    setFavorites((current) => [...current, id]);
+  }
+}
 
   return (
     <main dir="rtl" className="min-h-screen bg-[#f6f8fb] pb-32 text-slate-950">

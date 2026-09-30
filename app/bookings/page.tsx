@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -9,50 +9,79 @@ import {
   MapPin,
 } from "lucide-react";
 
-type Booking = {
-  bookingId: number;
-  appointmentId: number;
-  service: string;
-  business: string;
-  category: string;
-  time: string;
-  duration: string;
-  address: string;
-  area: string;
-  price: number;
-  createdAt: string;
+import { appointments } from "../../data/appointments";
+import { createClient } from "../../lib/supabase/client";
+
+type BookingRow = {
+  id: string;
+  appointment_id: number;
+  status: string;
+  created_at: string;
 };
 
-function subscribeToBookings(callback: () => void) {
-  window.addEventListener("storage", callback);
-
-  return () => {
-    window.removeEventListener("storage", callback);
-  };
-}
-
-function getBookingsSnapshot() {
-  return localStorage.getItem("freespot-bookings") ?? "[]";
-}
-
-function getServerBookingsSnapshot() {
-  return "[]";
-}
-
 export default function BookingsPage() {
-  const bookingsString = useSyncExternalStore(
-    subscribeToBookings,
-    getBookingsSnapshot,
-    getServerBookingsSnapshot
-  );
+  const [bookings, setBookings] = useState<BookingRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const bookings = useMemo<Booking[]>(() => {
-    try {
-      return JSON.parse(bookingsString);
-    } catch {
-      return [];
+  useEffect(() => {
+    async function loadBookings() {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setIsLoggedIn(false);
+        setLoading(false);
+        return;
+      }
+
+      setIsLoggedIn(true);
+
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("id, appointment_id, status, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading bookings:", error);
+        setLoading(false);
+        return;
+      }
+
+      setBookings(data ?? []);
+      setLoading(false);
     }
-  }, [bookingsString]);
+
+    loadBookings();
+  }, []);
+
+  const bookingsWithDetails = useMemo(() => {
+    return bookings
+      .map((booking) => {
+        const appointment = appointments.find(
+          (item) => item.id === Number(booking.appointment_id)
+        );
+
+        if (!appointment) {
+          return null;
+        }
+
+        return {
+          ...booking,
+          appointment,
+        };
+      })
+      .filter(
+        (
+          booking
+        ): booking is BookingRow & {
+          appointment: (typeof appointments)[number];
+        } => booking !== null
+      );
+  }, [bookings]);
 
   return (
     <main
@@ -75,10 +104,36 @@ export default function BookingsPage() {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 pt-5">
-        {bookings.length === 0 ? (
+        {loading ? (
+          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
+            <p className="font-black">טוען הזמנות...</p>
+          </section>
+        ) : !isLoggedIn ? (
           <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
             <CalendarDays
-              size={36}
+              size={38}
+              className="mx-auto text-slate-300"
+            />
+
+            <h2 className="mt-4 text-xl font-black">
+              צריך להתחבר כדי לראות הזמנות
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-500">
+              ההזמנות שלך נשמרות בחשבון וזמינות מכל מכשיר.
+            </p>
+
+            <Link
+              href="/auth"
+              className="mt-5 inline-block rounded-2xl bg-blue-600 px-5 py-3 font-black text-white"
+            >
+              התחבר
+            </Link>
+          </section>
+        ) : bookingsWithDetails.length === 0 ? (
+          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
+            <CalendarDays
+              size={38}
               className="mx-auto text-slate-300"
             />
 
@@ -99,69 +154,70 @@ export default function BookingsPage() {
           </section>
         ) : (
           <div className="space-y-4">
-            {bookings
-              .slice()
-              .reverse()
-              .map((booking) => (
-                <article
-                  key={booking.bookingId}
-                  className="rounded-[26px] border border-slate-200 bg-white p-5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-black text-blue-600">
-                        {booking.category}
-                      </p>
+            {bookingsWithDetails.map((booking) => (
+              <article
+                key={booking.id}
+                className="rounded-[26px] border border-slate-200 bg-white p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black text-blue-600">
+                      {booking.appointment.category}
+                    </p>
 
-                      <h2 className="mt-1 text-xl font-black">
-                        {booking.service}
-                      </h2>
+                    <h2 className="mt-1 text-xl font-black">
+                      {booking.appointment.service}
+                    </h2>
 
-                      <p className="mt-1 font-bold text-slate-500">
-                        {booking.business}
-                      </p>
-                    </div>
+                    <p className="mt-1 font-bold text-slate-500">
+                      {booking.appointment.business}
+                    </p>
+                  </div>
 
-                    <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-black text-green-700">
-                      מאושר
+                  <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-black text-green-700">
+                    מאושר
+                  </span>
+                </div>
+
+                <div className="mt-5 space-y-3 rounded-2xl bg-slate-50 p-4">
+                  <div className="flex items-center gap-3">
+                    <Clock3
+                      size={18}
+                      className="text-blue-600"
+                    />
+
+                    <span className="font-bold">
+                      היום, {booking.appointment.time} ·{" "}
+                      {booking.appointment.duration}
                     </span>
                   </div>
 
-                  <div className="mt-5 space-y-3 rounded-2xl bg-slate-50 p-4">
-                    <div className="flex items-center gap-3">
-                      <Clock3
-                        size={18}
-                        className="text-blue-600"
-                      />
+                  <div className="flex items-center gap-3">
+                    <MapPin
+                      size={18}
+                      className="text-blue-600"
+                    />
 
-                      <span className="font-bold">
-                        היום, {booking.time} · {booking.duration}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <MapPin
-                        size={18}
-                        className="text-blue-600"
-                      />
-
-                      <span className="text-sm font-bold text-slate-600">
-                        {booking.address}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                    <span className="text-sm font-bold text-slate-500">
-                      מחיר
-                    </span>
-
-                    <span className="text-xl font-black">
-                      ₪{booking.price}
+                    <span className="text-sm font-bold text-slate-600">
+                      {booking.appointment.address}
                     </span>
                   </div>
-                </article>
-              ))}
+                </div>
+
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                  <span className="text-xl font-black">
+                    ₪{booking.appointment.price}
+                  </span>
+
+                  <Link
+                    href={`/appointment/${booking.appointment.id}`}
+                    className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white"
+                  >
+                    פרטי התור
+                  </Link>
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </div>
