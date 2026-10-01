@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -24,22 +24,6 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    async function checkUser() {
-      const supabase = createClient();
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        router.replace("/");
-      }
-    }
-
-    checkUser();
-  }, [router]);
 
   async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,7 +47,7 @@ export default function AuthPage() {
       console.error("Login error:", error);
 
       setMessage(
-        "לא הצלחנו להתחבר. בדוק שהאימייל והסיסמה נכונים ושהחשבון אומת."
+        "לא הצלחנו להתחבר. בדוק שהאימייל והסיסמה נכונים ושהחשבון אומת.",
       );
 
       setLoading(false);
@@ -200,13 +184,9 @@ export default function AuthPage() {
         {/* Login card */}
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <div>
-            <p className="text-sm font-black text-blue-600">
-              ברוכים הבאים
-            </p>
+            <p className="text-sm font-black text-blue-600">ברוכים הבאים</p>
 
-            <h2 className="mt-1 text-2xl font-black">
-              טוב לראות אותך שוב
-            </h2>
+            <h2 className="mt-1 text-2xl font-black">טוב לראות אותך שוב</h2>
 
             <p className="mt-2 text-sm leading-6 text-slate-500">
               התחבר כדי לראות תורים, הזמנות ומועדפים.
@@ -261,16 +241,10 @@ export default function AuthPage() {
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
                   disabled={loading || success}
-                  aria-label={
-                    showPassword ? "הסתר סיסמה" : "הצג סיסמה"
-                  }
+                  aria-label={showPassword ? "הסתר סיסמה" : "הצג סיסמה"}
                   className="absolute left-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
-                  {showPassword ? (
-                    <EyeOff size={19} />
-                  ) : (
-                    <Eye size={19} />
-                  )}
+                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
                 </button>
               </div>
             </div>
@@ -298,7 +272,6 @@ export default function AuthPage() {
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-green-500">
                     <Check size={18} strokeWidth={3} />
                   </span>
-
                   התחברת!
                 </span>
               ) : loading ? (
@@ -317,9 +290,7 @@ export default function AuthPage() {
 
           {/* Signup */}
           <div className="mt-7 border-t border-slate-100 pt-6 text-center">
-            <p className="text-sm text-slate-500">
-              עדיין אין לך חשבון?
-            </p>
+            <p className="text-sm text-slate-500">עדיין אין לך חשבון?</p>
 
             <Link
               href="/auth/signup"
@@ -331,8 +302,7 @@ export default function AuthPage() {
         </div>
 
         <p className="mt-5 text-center text-xs leading-5 text-slate-400">
-          בהתחברות ל־FreeSpot אתה מסכים לתנאי השימוש ולמדיניות
-          הפרטיות.
+          בהתחברות ל־FreeSpot אתה מסכים לתנאי השימוש ולמדיניות הפרטיות.
         </p>
       </section>
     </main>

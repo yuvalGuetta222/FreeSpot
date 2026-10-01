@@ -1,22 +1,81 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Check,
-  MapPin,
-} from "lucide-react";
+import { Check, LoaderCircle, MapPin } from "lucide-react";
+
+import { createClient } from "../../../lib/supabase/client";
 
 export default function VerifiedPage() {
   const router = useRouter();
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace("/");
-      router.refresh();
-    }, 1500);
+  const [message, setMessage] = useState("בודקים את החשבון שלך...");
 
-    return () => clearTimeout(timer);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function continueAfterVerification() {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        router.replace("/auth");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role, onboarding_completed")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error("Profile after verification error:", profileError);
+
+        setMessage("לא הצלחנו לטעון את החשבון.");
+
+        timer = setTimeout(() => {
+          router.replace("/auth");
+        }, 1800);
+
+        return;
+      }
+
+      if (profile.role === "business") {
+        setMessage("החשבון העסקי אומת!");
+
+        timer = setTimeout(() => {
+          router.replace("/business/pending");
+          router.refresh();
+        }, 1400);
+
+        return;
+      }
+
+      setMessage("האימייל אומת!");
+
+      timer = setTimeout(() => {
+        if (profile.onboarding_completed) {
+          router.replace("/");
+        } else {
+          router.replace("/onboarding/customer");
+        }
+
+        router.refresh();
+      }, 1400);
+    }
+
+    continueAfterVerification();
+
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
   }, [router]);
 
   return (
@@ -76,16 +135,15 @@ export default function VerifiedPage() {
         </div>
 
         <div className="verified-fade">
-          <h1 className="mt-6 text-3xl font-black">
-            האימייל אומת!
-          </h1>
+          <h1 className="mt-6 text-3xl font-black">{message}</h1>
 
-          <p className="mt-2 text-slate-500">
-            החשבון שלך מוכן. מכניסים אותך ל־FreeSpot...
-          </p>
+          <div className="mt-4 flex items-center justify-center gap-2 text-sm font-black text-blue-600">
+            <LoaderCircle size={17} className="animate-spin" />
+            מכינים את FreeSpot עבורך
+          </div>
 
-          <div className="mt-7 flex items-center justify-center gap-2 text-sm font-black text-blue-600">
-            <MapPin size={18} />
+          <div className="mt-7 flex items-center justify-center gap-2 text-sm font-black text-slate-400">
+            <MapPin size={17} />
             מוצאים לך תור פנוי, ברגע הנכון
           </div>
         </div>

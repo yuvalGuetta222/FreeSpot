@@ -1,21 +1,15 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import {
-  ArrowRight,
-  MailCheck,
-  MapPin,
-} from "lucide-react";
+import { ArrowRight, MailCheck, MapPin } from "lucide-react";
 
-export default function CheckEmailPage() {
-  const [email, setEmail] = useState("");
+type PageProps = {
+  searchParams: Promise<{
+    email?: string;
+  }>;
+};
 
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-
-    setEmail(searchParams.get("email") ?? "");
-  }, []);
+export default async function CheckEmailPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const email = params.email ?? "";
 
   return (
     <main
@@ -46,9 +40,7 @@ export default function CheckEmailPage() {
             <MailCheck size={30} />
           </div>
 
-          <h2 className="mt-5 text-2xl font-black">
-            שלחנו לך מייל
-          </h2>
+          <h2 className="mt-5 text-2xl font-black">שלחנו לך מייל</h2>
 
           <p className="mt-3 leading-7 text-slate-500">
             שלחנו קישור לאימות החשבון שלך
@@ -56,17 +48,13 @@ export default function CheckEmailPage() {
           </p>
 
           {email && (
-            <p
-              dir="ltr"
-              className="mt-2 break-all font-black text-slate-800"
-            >
+            <p dir="ltr" className="mt-2 break-all font-black text-slate-800">
               {email}
             </p>
           )}
 
           <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-            פתח את המייל ולחץ על{" "}
-            <strong>Confirm email address</strong>.
+            פתח את המייל ולחץ על <strong>Confirm email address</strong>.
             <br />
             מיד לאחר האישור נחזיר אותך אוטומטית ל־FreeSpot.
           </div>

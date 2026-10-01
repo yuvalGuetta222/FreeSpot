@@ -96,34 +96,38 @@ export default function CustomerSignupPage() {
 
     const supabase = createClient();
 
-   const { data, error } = await supabase.auth.signUp({
-  email: email.trim(),
-  password,
-  options: {
-    emailRedirectTo: `${window.location.origin}/auth/callback`,
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
 
-    data: {
-      role: "customer",
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      phone: phone.trim(),
-    },
-  },
-});
+        data: {
+          role: "customer",
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          phone: phone.trim(),
+        },
+      },
+    });
 
     if (error) {
       console.error("Signup error:", error);
 
-      setMessage(
-        error.message.includes("already registered")
-          ? "כבר קיים חשבון עם האימייל הזה."
-          : "לא הצלחנו ליצור את החשבון. נסה שוב."
-      );
+      if (
+        error.status === 429 ||
+        error.message.toLowerCase().includes("rate limit")
+      ) {
+        setMessage("שלחנו יותר מדי מיילי אימות בזמן קצר. המתן מעט ונסה שוב.");
+      } else if (error.message.toLowerCase().includes("already registered")) {
+        setMessage("כבר קיים חשבון עם האימייל הזה.");
+      } else {
+        setMessage("לא הצלחנו ליצור את החשבון. נסה שוב.");
+      }
 
       setLoading(false);
       return;
     }
-
     if (!data.user) {
       setMessage("לא הצלחנו ליצור את החשבון.");
       setLoading(false);
@@ -132,7 +136,7 @@ export default function CustomerSignupPage() {
 
     const verifyEmail = encodeURIComponent(email.trim());
 
-   router.push(`/auth/check-email?email=${verifyEmail}`);
+    router.push(`/auth/check-email?email=${verifyEmail}`);
   }
 
   return (
@@ -171,9 +175,7 @@ export default function CustomerSignupPage() {
             <span className="text-sm font-black">חשבון לקוח</span>
           </div>
 
-          <h2 className="mt-2 text-3xl font-black">
-            בוא נכיר
-          </h2>
+          <h2 className="mt-2 text-3xl font-black">בוא נכיר</h2>
 
           <p className="mt-2 leading-7 text-slate-500">
             עוד רגע תוכל להתחיל למצוא תורים שהתפנו קרוב אליך.
@@ -315,16 +317,10 @@ export default function CustomerSignupPage() {
                 type="button"
                 onClick={() => setShowPassword((current) => !current)}
                 disabled={loading}
-                aria-label={
-                  showPassword ? "הסתר סיסמה" : "הצג סיסמה"
-                }
+                aria-label={showPassword ? "הסתר סיסמה" : "הצג סיסמה"}
                 className="absolute left-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100"
               >
-                {showPassword ? (
-                  <EyeOff size={19} />
-                ) : (
-                  <Eye size={19} />
-                )}
+                {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
               </button>
             </div>
           </div>
@@ -343,9 +339,7 @@ export default function CustomerSignupPage() {
               type={showPassword ? "text" : "password"}
               autoComplete="new-password"
               value={confirmPassword}
-              onChange={(event) =>
-                setConfirmPassword(event.target.value)
-              }
+              onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="הקלד שוב את הסיסמה"
               disabled={loading}
               className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50"
@@ -369,8 +363,7 @@ export default function CustomerSignupPage() {
             </span>
 
             <span className="text-sm leading-6 text-slate-500">
-              קראתי ואני מסכים לתנאי השימוש ולמדיניות הפרטיות של
-              FreeSpot.
+              קראתי ואני מסכים לתנאי השימוש ולמדיניות הפרטיות של FreeSpot.
             </span>
           </button>
 
