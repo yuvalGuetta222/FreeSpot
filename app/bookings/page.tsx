@@ -1,29 +1,52 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   CalendarDays,
   Clock3,
+  LoaderCircle,
   MapPin,
+  
 } from "lucide-react";
 
-import { appointments } from "../../data/appointments";
 import { createClient } from "../../lib/supabase/client";
 
-type BookingRow = {
-  id: string;
+type Booking = {
+  booking_id: string;
   appointment_id: number;
-  status: string;
-  created_at: string;
+  booking_status: string;
+  booked_at: string;
+
+  service: string;
+  category: string;
+  business_name: string;
+
+  starts_at: string | null;
+  appointment_time: string;
+  duration: string;
+
+  area: string | null;
+  address: string | null;
+
+  price: number;
+  old_price: number | null;
+
+  description: string | null;
+  is_available: boolean;
 };
 
 export default function BookingsPage() {
-  const [bookings, setBookings] = useState<BookingRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const router = useRouter();
 
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cancellingId, setCancellingId] =
+  useState<string | null>(null);
+  const [bookingToCancel, setBookingToCancel] =
+  useState<Booking | null>(null);
   useEffect(() => {
     async function loadBookings() {
       const supabase = createClient();
@@ -33,20 +56,16 @@ export default function BookingsPage() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        setIsLoggedIn(false);
-        setLoading(false);
+        router.replace("/auth");
         return;
       }
 
-      setIsLoggedIn(true);
-
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("id, appointment_id, status, created_at")
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc(
+        "get_my_bookings"
+      );
 
       if (error) {
-        console.error("Error loading bookings:", error);
+        console.error("Bookings error:", error);
         setLoading(false);
         return;
       }
@@ -56,82 +75,138 @@ export default function BookingsPage() {
     }
 
     loadBookings();
-  }, []);
+  }, [router]);
 
-  const bookingsWithDetails = useMemo(() => {
-    return bookings
-      .map((booking) => {
-        const appointment = appointments.find(
-          (item) => item.id === Number(booking.appointment_id)
-        );
+  function formatDate(startsAt: string | null) {
+    if (!startsAt) {
+      return null;
+    }
 
-        if (!appointment) {
-          return null;
-        }
+    return new Intl.DateTimeFormat("he-IL", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(new Date(startsAt));
+  }
 
-        return {
-          ...booking,
-          appointment,
-        };
-      })
-      .filter(
-        (
-          booking
-        ): booking is BookingRow & {
-          appointment: (typeof appointments)[number];
-        } => booking !== null
+  function formatTime(
+    startsAt: string | null,
+    fallbackTime: string
+  ) {
+    if (!startsAt) {
+      return fallbackTime;
+    }
+
+    return new Intl.DateTimeFormat("he-IL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(startsAt));
+  }
+async function cancelBooking(bookingId: string) {
+  setCancellingId(bookingId);
+
+  const supabase = createClient();
+
+  const { error } = await supabase.rpc(
+    "cancel_my_booking",
+    {
+      p_booking_id: bookingId,
+    }
+  );
+
+  if (error) {
+    console.error("Cancel booking error:", error);
+
+    const errorMessage = error.message ?? "";
+
+    if (
+      errorMessage.includes(
+        "APPOINTMENT_ALREADY_STARTED"
+      )
+    ) {
+      alert(
+        "אי אפשר לבטל את ההזמנה כי מועד התור כבר הגיע."
       );
-  }, [bookings]);
+    } else if (
+      errorMessage.includes(
+        "BOOKING_NOT_CONFIRMED"
+      )
+    ) {
+      alert("ההזמנה הזאת כבר לא פעילה.");
+    } else {
+      alert(
+        "לא הצלחנו לבטל את ההזמנה. נסה שוב."
+      );
+    }
+
+    setCancellingId(null);
+    return;
+  }
+
+  setBookings((current) =>
+  current.map((booking) =>
+    booking.booking_id === bookingId
+      ? {
+          ...booking,
+          booking_status: "cancelled",
+          is_available: true,
+        }
+      : booking
+  )
+);
+
+setBookingToCancel(null);
+setCancellingId(null);
+}
+  if (loading) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-screen items-center justify-center bg-[#f5f7fb]"
+      >
+        <LoaderCircle
+          size={30}
+          className="animate-spin text-blue-600"
+        />
+      </main>
+    );
+  }
 
   return (
     <main
       dir="rtl"
-      className="min-h-screen bg-[#f6f8fb] pb-10 text-slate-950"
+      className="min-h-screen bg-[#f5f7fb] pb-28 text-slate-950"
     >
-      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center px-4 py-3">
-          <Link
-            href="/"
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white"
-          >
-            <ArrowRight size={20} />
-          </Link>
+      <div className="mx-auto max-w-3xl px-4 py-7">
+        <header>
+  <div className="flex items-center gap-3">
+    <button
+      type="button"
+      onClick={() => router.replace("/")}
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white transition hover:bg-slate-50"
+      aria-label="חזרה"
+    >
+      <ArrowRight size={20} />
+    </button>
 
-          <h1 className="absolute left-1/2 -translate-x-1/2 font-black">
-            ההזמנות שלי
-          </h1>
-        </div>
-      </header>
+    <div>
+      <p className="text-sm font-black text-blue-600">
+        FreeSpot
+      </p>
 
-      <div className="mx-auto max-w-3xl px-4 pt-5">
-        {loading ? (
-          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
-            <p className="font-black">טוען הזמנות...</p>
-          </section>
-        ) : !isLoggedIn ? (
-          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
-            <CalendarDays
-              size={38}
-              className="mx-auto text-slate-300"
-            />
+      <h1 className="mt-1 text-3xl font-black">
+        ההזמנות שלי
+      </h1>
+    </div>
+  </div>
 
-            <h2 className="mt-4 text-xl font-black">
-              צריך להתחבר כדי לראות הזמנות
-            </h2>
+  <p className="mt-3 text-slate-500">
+    כל התורים שהזמנת במקום אחד.
+  </p>
+</header>
 
-            <p className="mt-2 text-sm text-slate-500">
-              ההזמנות שלך נשמרות בחשבון וזמינות מכל מכשיר.
-            </p>
-
-            <Link
-              href="/auth"
-              className="mt-5 inline-block rounded-2xl bg-blue-600 px-5 py-3 font-black text-white"
-            >
-              התחבר
-            </Link>
-          </section>
-        ) : bookingsWithDetails.length === 0 ? (
-          <section className="rounded-[26px] border border-slate-200 bg-white p-8 text-center">
+        {bookings.length === 0 ? (
+          <section className="mt-8 rounded-[28px] border border-slate-200 bg-white px-5 py-12 text-center">
             <CalendarDays
               size={38}
               className="mx-auto text-slate-300"
@@ -141,86 +216,228 @@ export default function BookingsPage() {
               עדיין אין לך הזמנות
             </h2>
 
-            <p className="mt-2 text-sm text-slate-500">
-              כשתזמין תור דרך FreeSpot, הוא יופיע כאן.
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              כשאתה מזמין תור שהתפנה, הוא יופיע כאן.
             </p>
 
             <Link
               href="/"
-              className="mt-5 inline-block rounded-2xl bg-blue-600 px-5 py-3 font-black text-white"
+              className="mt-6 inline-flex h-12 items-center justify-center rounded-2xl bg-blue-600 px-6 font-black text-white"
             >
               מצא תור
             </Link>
           </section>
         ) : (
-          <div className="space-y-4">
-            {bookingsWithDetails.map((booking) => (
-              <article
-                key={booking.id}
-                className="rounded-[26px] border border-slate-200 bg-white p-5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-black text-blue-600">
-                      {booking.appointment.category}
-                    </p>
+          <div className="mt-7 space-y-4">
+            {bookings.map((booking) => {
+              const date = formatDate(
+                booking.starts_at
+              );
 
-                    <h2 className="mt-1 text-xl font-black">
-                      {booking.appointment.service}
-                    </h2>
+              const time = formatTime(
+                booking.starts_at,
+                booking.appointment_time
+              );
 
-                    <p className="mt-1 font-bold text-slate-500">
-                      {booking.appointment.business}
-                    </p>
+              return (
+                <article
+                  key={booking.booking_id}
+                  className="overflow-hidden rounded-[26px] border border-slate-200 bg-white"
+                >
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${
+                            booking.booking_status ===
+                            "confirmed"
+                              ? "bg-green-50 text-green-700"
+                              : booking.booking_status ===
+                                  "cancelled"
+                                ? "bg-red-50 text-red-700"
+                                : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {booking.booking_status ===
+                          "confirmed"
+                            ? "מאושר"
+                            : booking.booking_status ===
+                                "cancelled"
+                              ? "בוטל"
+                              : booking.booking_status}
+                        </span>
+
+                        <h2 className="mt-3 text-xl font-black">
+                          {booking.service}
+                        </h2>
+
+                        <p className="mt-1 font-bold text-slate-500">
+                          {booking.business_name}
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 text-left">
+                        <p className="text-2xl font-black">
+                          ₪{booking.price}
+                        </p>
+
+                        {booking.old_price && (
+                          <p className="text-sm text-slate-400 line-through">
+                            ₪{booking.old_price}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl bg-slate-50 p-3">
+                        <CalendarDays
+                          size={17}
+                          className="text-blue-600"
+                        />
+
+                        <p className="mt-2 text-xs text-slate-400">
+                          מועד
+                        </p>
+
+                        <p className="mt-1 text-sm font-black">
+                          {date ?? "מועד התור"}{" "}
+                          {time}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-slate-50 p-3">
+                        <Clock3
+                          size={17}
+                          className="text-blue-600"
+                        />
+
+                        <p className="mt-2 text-xs text-slate-400">
+                          משך
+                        </p>
+
+                        <p className="mt-1 text-sm font-black">
+                          {booking.duration}
+                        </p>
+                      </div>
+                    </div>
+
+                    {(booking.address ||
+                      booking.area) && (
+                      <div className="mt-4 flex items-start gap-2 text-sm text-slate-500">
+                        <MapPin
+                          size={17}
+                          className="mt-0.5 shrink-0 text-blue-600"
+                        />
+
+                        <span>
+                          {booking.address}
+                          {booking.address &&
+                          booking.area
+                            ? ", "
+                            : ""}
+                          {booking.area}
+                        </span>
+                      </div>
+                    )}
+{booking.booking_status === "confirmed" &&
+  booking.starts_at &&
+  new Date(booking.starts_at) > new Date() && (
+    <button
+      type="button"
+      onClick={() =>
+  setBookingToCancel(booking)
+}
+      disabled={
+        cancellingId === booking.booking_id
+      }
+      className="mt-5 flex h-12 w-full items-center justify-center rounded-2xl bg-red-50 font-black text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+    >
+      {cancellingId === booking.booking_id
+        ? "מבטל..."
+        : "ביטול הזמנה"}
+    </button>
+  )}
+                    <Link
+                      href={`/appointment/${booking.appointment_id}`}
+                      className="mt-3 flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 font-black text-slate-700 transition hover:bg-slate-50"
+                    >
+                      פרטי התור
+                    </Link>
                   </div>
-
-                  <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-black text-green-700">
-                    מאושר
-                  </span>
-                </div>
-
-                <div className="mt-5 space-y-3 rounded-2xl bg-slate-50 p-4">
-                  <div className="flex items-center gap-3">
-                    <Clock3
-                      size={18}
-                      className="text-blue-600"
-                    />
-
-                    <span className="font-bold">
-                      היום, {booking.appointment.time} ·{" "}
-                      {booking.appointment.duration}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <MapPin
-                      size={18}
-                      className="text-blue-600"
-                    />
-
-                    <span className="text-sm font-bold text-slate-600">
-                      {booking.appointment.address}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                  <span className="text-xl font-black">
-                    ₪{booking.appointment.price}
-                  </span>
-
-                  <Link
-                    href={`/appointment/${booking.appointment.id}`}
-                    className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white"
-                  >
-                    פרטי התור
-                  </Link>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </div>
+      {bookingToCancel && (
+  <div className="fixed inset-0 z-100 flex items-end justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center">
+    <div
+      dir="rtl"
+      className="w-full max-w-md rounded-[30px] bg-white p-6 shadow-2xl"
+    >
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+        <CalendarDays size={26} />
+      </div>
+
+      <div className="mt-5 text-center">
+        <h2 className="text-2xl font-black">
+          לבטל את ההזמנה?
+        </h2>
+
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          אתה עומד לבטל את התור ל־
+          <span className="font-black text-slate-700">
+            {" "}
+            {bookingToCancel.service}
+          </span>
+          .
+        </p>
+
+        <p className="mt-1 text-sm leading-6 text-slate-500">
+          אם מועד התור עדיין בעתיד, הוא יחזור להיות
+          זמין ללקוחות אחרים.
+        </p>
+      </div>
+
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            setBookingToCancel(null)
+          }
+          disabled={
+            cancellingId ===
+            bookingToCancel.booking_id
+          }
+          className="h-13 rounded-2xl border border-slate-200 bg-white font-black text-slate-700"
+        >
+          חזרה
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            cancelBooking(
+              bookingToCancel.booking_id
+            )
+          }
+          disabled={
+            cancellingId ===
+            bookingToCancel.booking_id
+          }
+          className="flex h-13 items-center justify-center rounded-2xl bg-red-600 font-black text-white disabled:opacity-60"
+        >
+          {cancellingId ===
+          bookingToCancel.booking_id
+            ? "מבטל..."
+            : "כן, בטל את התור"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </main>
   );
 }

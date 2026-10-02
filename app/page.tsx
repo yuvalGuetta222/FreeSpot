@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { createClient } from "../lib/supabase/client";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { categories as appCategories } from "../data/categories";
 import {
   Bell,
   CalendarDays,
@@ -37,74 +46,170 @@ type Appointment = {
   oldPrice?: number;
   urgency: string;
   cover: string;
+  businessId: string;
+  startsAt: string | null;
 };
 
 const categories = [
-  { name: "הכל", icon: Sparkles },
-  { name: "תספורת", icon: Scissors },
-  { name: "ציפורניים", icon: Sparkles },
-  { name: "גבות", icon: Sparkles },
-  { name: "קוסמטיקה", icon: Sparkles },
-  { name: "מסאז׳", icon: Sparkles },
+  {
+    name: "הכל",
+    icon: Sparkles,
+  },
+  ...appCategories.map((category) => ({
+    name: category.name,
+    icon:
+      category.id === "haircut"
+        ? Scissors
+        : Sparkles,
+  })),
 ];
+function getAppointmentCover(category: string) {
+  const normalized = normalizeCategory(category);
 
-const fallbackAppointments: Appointment[] = [
-  {
-    id: 1,
-    service: "תספורת גבר",
-    category: "תספורת",
-    business: "Barber House",
-    rating: 4.9,
-    reviews: 128,
-    time: "17:30",
-    duration: "40 דקות",
-    distance: "1.2 ק״מ",
-    area: "רמת גן",
-    price: 80,
-    oldPrice: 100,
-    urgency: "מתחיל בעוד 48 דק׳",
-    cover: "cover-barber",
-  },
-  {
-    id: 2,
-    service: "לק ג׳ל",
-    category: "ציפורניים",
-    business: "Luna Nails",
-    rating: 4.8,
-    reviews: 94,
-    time: "18:15",
-    duration: "60 דקות",
-    distance: "2.1 ק״מ",
-    area: "גבעתיים",
-    price: 110,
-    urgency: "התפנה עכשיו",
-    cover: "cover-nails",
-  },
-  {
-    id: 3,
-    service: "עיצוב גבות",
-    category: "גבות",
-    business: "Maya Beauty",
-    rating: 4.7,
-    reviews: 76,
-    time: "19:00",
-    duration: "30 דקות",
-    distance: "2.8 ק״מ",
-    area: "תל אביב",
-    price: 70,
-    oldPrice: 90,
-    urgency: "מתחיל בעוד שעתיים",
-    cover: "cover-beauty",
-  },
-];
+  switch (normalized) {
+    case "haircut":
+      return "cover-barber";
+
+    case "nails":
+      return "cover-nails";
+
+    case "eyebrows":
+    case "cosmetics":
+    case "massage":
+      return "cover-beauty";
+
+    default:
+      return "cover-beauty";
+  }
+}
+
+function formatAppointmentDate(startsAt: string | null) {
+  if (!startsAt) {
+    return "היום";
+  }
+
+  return new Intl.DateTimeFormat("he-IL", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(startsAt));
+}
+
+function formatAppointmentTime(
+  startsAt: string | null,
+  fallbackTime: string
+) {
+  if (!startsAt) {
+    return fallbackTime;
+  }
+
+  return new Intl.DateTimeFormat("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(startsAt));
+}
+function normalizeCategory(category: string) {
+  const value = category.trim().toLowerCase();
+
+  const categoryMap: Record<string, string> = {
+    haircut: "haircut",
+    "תספורת": "haircut",
+    "תספורות": "haircut",
+
+    nails: "nails",
+    "ציפורניים": "nails",
+
+    eyebrows: "eyebrows",
+    "גבות": "eyebrows",
+
+    cosmetics: "cosmetics",
+    "קוסמטיקה": "cosmetics",
+
+    massage: "massage",
+    "מסאז׳": "massage",
+    "עיסוי": "massage",
+  };
+
+  return categoryMap[value] ?? value;
+}
+function formatAppointmentUrgency(
+  startsAt: string | null,
+  fallbackUrgency: string,
+  now: number
+) {
+  if (!startsAt) {
+    return fallbackUrgency;
+  }
+
+  const diffMs =
+    new Date(startsAt).getTime() - now;
+
+  if (diffMs <= 0) {
+    return "התור כבר לא זמין";
+  }
+
+  const minutes = Math.ceil(
+    diffMs / (1000 * 60)
+  );
+
+  if (minutes <= 1) {
+    return "מתחיל בעוד פחות מדקה";
+  }
+
+  if (minutes < 60) {
+    return `מתחיל בעוד ${minutes} דק׳`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours < 24) {
+    if (remainingMinutes === 0) {
+      return hours === 1
+        ? "מתחיל בעוד שעה"
+        : `מתחיל בעוד ${hours} שעות`;
+    }
+
+    return `מתחיל בעוד ${hours} שעות ו-${remainingMinutes} דק׳`;
+  }
+
+  const days = Math.ceil(hours / 24);
+
+  return days === 1
+    ? "מתחיל מחר"
+    : `מתחיל בעוד ${days} ימים`;
+}
 
 export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("הכל");
+  const favoriteLocksRef =
+  useRef<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-const router = useRouter();
+  const router = useRouter();
+const searchParams = useSearchParams();
+const selectedBusinessId =
+  searchParams.get("business");
 const [appointments, setAppointments] =
   useState<Appointment[]>([]);
-const [favorites, setFavorites] = useState<number[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] =
+  useState(true);
+  const [now, setNow] = useState(() => Date.now());
+const [favorites, setFavorites] = useState<string[]>([]);
+const [preferredArea, setPreferredArea] =
+  useState<string | null>(null);
+
+const [preferredCategories, setPreferredCategories] =
+  useState<string[]>([]);
+useEffect(() => {
+  const interval = setInterval(() => {
+    setNow(Date.now());
+  }, 10000);
+
+  return () => clearInterval(interval);
+}, []);
+
+
+// ואז ממשיך מה שכבר יש לך
 useEffect(() => {
   async function loadFavorites() {
     const supabase = createClient();
@@ -119,80 +224,150 @@ useEffect(() => {
     }
 
     const { data, error } = await supabase
-      .from("favorites")
-      .select("appointment_id");
+      .from("business_favorites")
+      .select("business_id");
 
     if (error) {
-      console.error("Error loading favorites:", error);
+      console.error(
+        "Error loading business favorites:",
+        error
+      );
       return;
     }
 
     setFavorites(
-      data.map((favorite) => Number(favorite.appointment_id))
+      (data ?? []).map(
+        (favorite: { business_id: string }) =>
+          favorite.business_id
+      )
     );
   }
 
   loadFavorites();
-}, 
-[]);
+}, []);
 useEffect(() => {
-  async function loadAppointments() {
+  async function loadPreferences() {
     const supabase = createClient();
 
-    const { data, error } = await supabase
-      .from("appointments")
-      .select(
-        `
-        id,
-        service,
-        category,
-        business,
-        rating,
-        reviews,
-        time,
-        duration,
-        distance,
-        area,
-        address,
-        price,
-        old_price,
-        urgency
-        `
-      )
-      .eq("is_available", true)
-      .order("id", { ascending: true });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error("Error loading appointments:", error);
+    if (!user) {
       return;
     }
 
-    const formattedAppointments: Appointment[] = (data ?? []).map(
-      (item) => {
-        const fallback = fallbackAppointments.find(
-          (appointment) => appointment.id === Number(item.id)
-        );
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "preferred_area, preferred_categories"
+      )
+      .eq("id", user.id)
+      .single();
 
-        return {
-          id: Number(item.id),
-          service: item.service,
-          category: item.category,
-          business: item.business,
-          rating: Number(item.rating ?? 0),
-          reviews: Number(item.reviews ?? 0),
-          time: item.time,
-          duration: item.duration,
-          distance: item.distance ?? "",
-          area: item.area ?? "",
-          price: Number(item.price),
-          oldPrice: item.old_price ? Number(item.old_price) : 0,
-          urgency: item.urgency ?? "",
-          cover: fallback?.cover ?? "",
-        };
-      }
+    if (error) {
+      console.error(
+        "Error loading preferences:",
+        error
+      );
+      return;
+    }
+
+    setPreferredArea(
+      data.preferred_area ?? null
     );
 
-    setAppointments(formattedAppointments);
+    setPreferredCategories(
+      data.preferred_categories ?? []
+    );
+  }
+
+  loadPreferences();
+}, []);
+useEffect(() => {
+  async function loadAppointments() {
+    setAppointmentsLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from("appointments")
+        .select(
+          `
+          id,
+          service,
+          category,
+          business,
+          business_id,
+          rating,
+          reviews,
+          time,
+          duration,
+          distance,
+          area,
+          address,
+          price,
+          old_price,
+          starts_at,
+          urgency
+          `
+        )
+       .eq("is_available", true)
+       .eq("is_published", true)
+       .not("business_id", "is", null)
+.not("starts_at", "is", null)
+.gt("starts_at", new Date().toISOString())
+.order("starts_at", { ascending: true });
+
+      if (error) {
+        console.error(
+          "Error loading appointments:",
+          error
+        );
+        
+        return;
+        
+      }
+
+      const formattedAppointments: Appointment[] =
+        (data ?? []).map((item) => {
+          return {
+            id: Number(item.id),
+            service: item.service,
+            category: item.category,
+            business: item.business,
+            businessId: item.business_id ?? "",
+            rating: Number(item.rating ?? 0),
+            reviews: Number(item.reviews ?? 0),
+            time: item.time,
+            duration: item.duration,
+            distance: item.distance ?? "",
+            area: item.area ?? "",
+            price: Number(item.price),
+            oldPrice:
+              item.old_price !== null
+                ? Number(item.old_price)
+                : undefined,
+            urgency: item.urgency ?? "",
+            cover: getAppointmentCover(
+              item.category
+            ),
+            startsAt: item.starts_at ?? null,
+          };
+        });
+
+      setAppointments(formattedAppointments);
+    } catch (error) {
+      console.error(
+        "Unexpected appointments error:",
+        error
+      );
+
+      setAppointments([]);
+    } finally {
+      setAppointmentsLoading(false);
+    }
   }
 
   loadAppointments();
@@ -200,61 +375,201 @@ useEffect(() => {
   const filteredAppointments = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
-    return appointments.filter((appointment) => {
-      const categoryMatch =
-        selectedCategory === "הכל" || appointment.category === selectedCategory;
+ return appointments
+  .filter((appointment) => {
+    if (
+      appointment.startsAt &&
+      new Date(appointment.startsAt).getTime() <= now
+    ) {
+      return false;
+    }
+if (
+  selectedBusinessId &&
+  appointment.businessId !== selectedBusinessId
+) {
+  return false;
+}
+   const categoryMatch =
+  selectedCategory === "הכל" ||
+  normalizeCategory(appointment.category) ===
+    normalizeCategory(selectedCategory);
 
-      const searchMatch =
-        normalizedSearch === "" ||
-        appointment.service.toLowerCase().includes(normalizedSearch) ||
-        appointment.business.toLowerCase().includes(normalizedSearch) ||
-        appointment.area.toLowerCase().includes(normalizedSearch);
+    const searchMatch =
+      normalizedSearch === "" ||
+      appointment.service
+        .toLowerCase()
+        .includes(normalizedSearch) ||
+      appointment.business
+        .toLowerCase()
+        .includes(normalizedSearch) ||
+      appointment.area
+        .toLowerCase()
+        .includes(normalizedSearch);
 
-      return categoryMatch && searchMatch;
-    });
-  }, [appointments, selectedCategory, search]);
+    return categoryMatch && searchMatch;
+  })
+ .sort((a, b) => {
+  const aAreaMatch =
+    preferredArea !== null &&
+    a.area.trim().toLowerCase() ===
+      preferredArea.trim().toLowerCase();
 
- async function toggleFavorite(id: number) {
-  const supabase = createClient();
+  const bAreaMatch =
+    preferredArea !== null &&
+    b.area.trim().toLowerCase() ===
+      preferredArea.trim().toLowerCase();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const aCategoryMatch =
+    preferredCategories.some(
+      (category) =>
+        normalizeCategory(category) ===
+        normalizeCategory(a.category)
+    );
 
-  if (!user) {
-    router.push("/auth");
+  const bCategoryMatch =
+    preferredCategories.some(
+      (category) =>
+        normalizeCategory(category) ===
+        normalizeCategory(b.category)
+    );
+
+  const aPreferenceScore =
+    Number(aAreaMatch) * 2 +
+    Number(aCategoryMatch) * 2;
+
+  const bPreferenceScore =
+    Number(bAreaMatch) * 2 +
+    Number(bCategoryMatch) * 2;
+
+  if (aPreferenceScore !== bPreferenceScore) {
+    return bPreferenceScore - aPreferenceScore;
+  }
+
+  if (!a.startsAt && !b.startsAt) {
+    return 0;
+  }
+
+  if (!a.startsAt) {
+    return 1;
+  }
+
+  if (!b.startsAt) {
+    return -1;
+  }
+
+  return (
+    new Date(a.startsAt).getTime() -
+    new Date(b.startsAt).getTime()
+  );
+});
+ }, [
+  appointments,
+  selectedCategory,
+  search,
+  now,
+  preferredArea,
+  preferredCategories,
+  selectedBusinessId,
+]);
+
+const hasPersonalMatches = filteredAppointments.some(
+  (appointment) => {
+    const areaMatch =
+      preferredArea !== null &&
+      appointment.area.trim().toLowerCase() ===
+        preferredArea.trim().toLowerCase();
+
+    const categoryMatch =
+      preferredCategories.some(
+        (category) =>
+          normalizeCategory(category) ===
+          normalizeCategory(appointment.category)
+      );
+
+    return areaMatch || categoryMatch;
+  }
+);
+
+async function toggleFavorite(
+  businessId: string
+) {
+  if (
+    !businessId ||
+    favoriteLocksRef.current.has(businessId)
+  ) {
     return;
   }
 
-  const isFavorite = favorites.includes(id);
+  favoriteLocksRef.current.add(businessId);
 
-  if (isFavorite) {
-    const { error } = await supabase
-      .from("favorites")
-      .delete()
-      .eq("appointment_id", id);
+  try {
+    const supabase = createClient();
 
-    if (error) {
-      console.error("Error removing favorite:", error);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/auth");
       return;
     }
 
-    setFavorites((current) =>
-      current.filter((favoriteId) => favoriteId !== id)
+    const isFavorite =
+      favorites.includes(businessId);
+
+    if (isFavorite) {
+      const { error } = await supabase
+        .from("business_favorites")
+        .delete()
+        .eq("business_id", businessId);
+
+      if (error) {
+        console.error(
+          "Remove business favorite error:",
+          error
+        );
+        return;
+      }
+
+      setFavorites((current) =>
+        current.filter(
+          (id) => id !== businessId
+        )
+      );
+    } else {
+      const { error } = await supabase
+        .from("business_favorites")
+        .insert({
+          business_id: businessId,
+        });
+
+      if (error) {
+        if (error.code === "23505") {
+          setFavorites((current) =>
+            current.includes(businessId)
+              ? current
+              : [...current, businessId]
+          );
+          return;
+        }
+
+        console.error(
+          "Add business favorite error:",
+          error
+        );
+        return;
+      }
+
+      setFavorites((current) =>
+        current.includes(businessId)
+          ? current
+          : [...current, businessId]
+      );
+    }
+  } finally {
+    favoriteLocksRef.current.delete(
+      businessId
     );
-  } else {
-    const { error } = await supabase
-      .from("favorites")
-      .insert({
-        appointment_id: id,
-      });
-
-    if (error) {
-      console.error("Error adding favorite:", error);
-      return;
-    }
-
-    setFavorites((current) => [...current, id]);
   }
 }
 
@@ -391,25 +706,73 @@ useEffect(() => {
                   ⚡
                 </span>
 
-                <h2 className="text-xl font-black sm:text-2xl">
-                  התפנה עכשיו לידך
-                </h2>
+               <h2 className="text-xl font-black sm:text-2xl">
+  {hasPersonalMatches
+    ? "תורים שמתאימים לך"
+    : "תורים פנויים עכשיו"}
+</h2>
               </div>
 
-              <p className="mt-1.5 text-sm text-slate-500">
-                תורים זמינים שאפשר לתפוס עכשיו
-              </p>
+            <p className="mt-1.5 text-sm text-slate-500">
+  {hasPersonalMatches
+    ? "סידרנו קודם תורים לפי האזור והקטגוריות שבחרת."
+    : "התורים הזמינים הקרובים ביותר כרגע."}
+</p>
             </div>
 
             <button className="hidden text-sm font-black text-blue-600 sm:block">
               הצג הכל
             </button>
           </div>
+{appointmentsLoading ? (
+  <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-14 text-center">
+    <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <p className="mt-4 text-sm font-bold text-slate-500">
+      מחפש תורים פנויים...
+    </p>
+  </div>
+) : filteredAppointments.length === 0 ? (
+  <div className="rounded-[28px] border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+    <CalendarDays size={38} className="mx-auto text-slate-300" />
+
+    <h3 className="mt-4 text-xl font-black">אין כרגע תורים זמינים</h3>
+
+    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+      כרגע לא מצאנו תורים שמתאימים לחיפוש שלך.
+      תורים חדשים מתפרסמים לאורך היום, אז שווה לבדוק שוב בהמשך.
+    </p>
+
+    {(selectedCategory !== "הכל" || search.trim() !== "") && (
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedCategory("הכל");
+          setSearch("");
+        }}
+        className="mt-6 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700"
+      >
+        הצג את כל התורים
+      </button>
+    )}
+  </div>
+) : (
+  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredAppointments.map((appointment) => {
-              const isFavorite = favorites.includes(appointment.id);
+              const isFavorite = favorites.includes(
+  appointment.businessId
+);
+const matchesPreferredArea =
+  preferredArea !== null &&
+  appointment.area.trim().toLowerCase() ===
+    preferredArea.trim().toLowerCase();
 
+const matchesPreferredCategory =
+  preferredCategories.some(
+    (category) =>
+      normalizeCategory(category) ===
+      normalizeCategory(appointment.category)
+  );
               return (
                 <article
                   key={appointment.id}
@@ -422,12 +785,22 @@ useEffect(() => {
                     <div className="absolute inset-0 bg-linear-to-t from-black/45 via-black/5 to-transparent" />
 
                     <div className="absolute right-4 top-4 rounded-full bg-white/95 px-3 py-1.5 text-xs font-black text-slate-800 shadow-sm backdrop-blur">
-                      {appointment.urgency}
+                      {formatAppointmentUrgency(
+                        appointment.startsAt,
+                        appointment.urgency,
+                        now
+                      )}
                     </div>
 
                     <button
-                      aria-label="הוסף למועדפים"
-                      onClick={() => toggleFavorite(appointment.id)}
+                      aria-label={
+  isFavorite
+    ? "הסר את העסק מהמועדפים"
+    : "שמור את העסק במועדפים"
+}
+                      onClick={() =>
+  toggleFavorite(appointment.businessId)
+}
                       className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-sm transition hover:scale-105"
                     >
                       <Heart
@@ -441,13 +814,20 @@ useEffect(() => {
                     </button>
 
                     <div className="relative z-10 text-white">
+                      <div className="mb-1 text-sm font-bold text-white/80">
+                        {formatAppointmentDate(appointment.startsAt)}
+                      </div>
+
                       <div className="text-4xl font-black tracking-tight">
-                        {appointment.time}
+                        {formatAppointmentTime(
+                          appointment.startsAt,
+                          appointment.time
+                        )}
                       </div>
 
                       <div className="mt-1 flex items-center gap-1 text-xs font-bold text-white/90">
                         <Clock3 size={14} />
-                        היום · {appointment.duration}
+                        {appointment.duration}
                       </div>
                     </div>
                   </div>
@@ -458,7 +838,22 @@ useEffect(() => {
                         <p className="text-xs font-black text-blue-600">
                           {appointment.category}
                         </p>
+                        {(matchesPreferredArea ||
+  matchesPreferredCategory) && (
+  <div className="mt-2 flex flex-wrap gap-2">
+    {matchesPreferredArea && (
+      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">
+        באזור שלך
+      </span>
+    )}
 
+    {matchesPreferredCategory && (
+      <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-black text-violet-700">
+        מעניין אותך
+      </span>
+    )}
+  </div>
+)}
                         <h3 className="mt-1 text-xl font-black">
                           {appointment.service}
                         </h3>
@@ -527,18 +922,7 @@ useEffect(() => {
               );
             })}
           </div>
-
-          {filteredAppointments.length === 0 && (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center">
-              <Search size={28} className="mx-auto text-slate-300" />
-
-              <p className="mt-3 font-black">לא מצאנו תור מתאים כרגע</p>
-
-              <p className="mt-1 text-sm text-slate-500">
-                נסה לחפש שירות או אזור אחר
-              </p>
-            </div>
-          )}
+        )}
         </section>
 
         {/* Alert CTA */}

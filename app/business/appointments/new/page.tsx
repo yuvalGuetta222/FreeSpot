@@ -121,41 +121,80 @@ export default function NewAppointmentPage() {
 
     const supabase = createClient();
 
-    const { error } = await supabase.from("appointments").insert({
-      business_id: business.id,
+    const { error } = await supabase.rpc(
+  "create_my_appointment",
+  {
+    p_business_id: business.id,
+    p_service: service.trim(),
+    p_starts_at: startsAt.toISOString(),
+    p_duration_minutes: durationMinutes,
+    p_price: appointmentPrice,
+    p_old_price: oldPrice
+      ? Number(oldPrice)
+      : null,
+    p_description: description.trim()
+      ? description.trim()
+      : null,
+  }
+);
 
-      service: service.trim(),
-      category: business.category,
-      business: business.business_name,
+   if (error) {
+  console.error(
+    "Create appointment error:",
+    error
+  );
 
-      time,
-      duration: `${durationMinutes} דקות`,
+  const errorMessage = error.message ?? "";
 
-      area: business.city,
-      address: business.address,
+  if (
+    errorMessage.includes(
+      "BUSINESS_NOT_VERIFIED_OR_FORBIDDEN"
+    )
+  ) {
+    setMessage(
+      "לא ניתן לפרסם תור מהעסק הזה."
+    );
+  } else if (
+    errorMessage.includes(
+      "INVALID_APPOINTMENT_TIME"
+    )
+  ) {
+    setMessage(
+      "מועד התור חייב להיות בעתיד."
+    );
+  } else if (
+    errorMessage.includes(
+      "INVALID_DURATION"
+    )
+  ) {
+    setMessage(
+      "משך התור אינו תקין."
+    );
+  } else if (
+    errorMessage.includes(
+      "INVALID_PRICE"
+    )
+  ) {
+    setMessage(
+      "מחיר התור אינו תקין."
+    );
+  } else if (
+    errorMessage.includes(
+      "INVALID_OLD_PRICE"
+    )
+  ) {
+    setMessage(
+      "המחיר הקודם חייב להיות גבוה מהמחיר החדש."
+    );
+  } else {
+    setMessage(
+      "לא הצלחנו לפרסם את התור. נסה שוב."
+    );
+  }
 
-      price: appointmentPrice,
-
-      old_price: oldPrice ? Number(oldPrice) : null,
-
-      urgency: "התפנה עכשיו",
-
-      description: description.trim() ? description.trim() : null,
-
-      starts_at: startsAt.toISOString(),
-      duration_minutes: durationMinutes,
-
-      is_available: true,
-    });
-
-    if (error) {
-      console.error("Create appointment error:", error);
-
-      setMessage("לא הצלחנו לפרסם את התור. נסה שוב.");
-
-      setLoading(false);
-      return;
-    }
+  setLoading(false);
+  return;
+}
 
     router.replace("/business");
     router.refresh();

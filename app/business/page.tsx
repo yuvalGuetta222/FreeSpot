@@ -55,7 +55,11 @@ type BusinessBooking = {
 
 export default function BusinessDashboardPage() {
   const router = useRouter();
+const [appointmentToRemove, setAppointmentToRemove] =
+  useState<Appointment | null>(null);
 
+const [removingAppointmentId, setRemovingAppointmentId] =
+  useState<number | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);
   const [ownerName, setOwnerName] = useState("");
   const [activeAppointments, setActiveAppointments] = useState<Appointment[]>(
@@ -140,6 +144,7 @@ export default function BusinessDashboardPage() {
           )
           .eq("business_id", businessData.id)
           .eq("is_available", true)
+          .eq("is_published", true)
           .gt("starts_at", new Date().toISOString())
           .order("starts_at", { ascending: true });
 
@@ -164,7 +169,40 @@ export default function BusinessDashboardPage() {
 
     loadDashboard();
   }, [router]);
+async function removeAppointmentFromPublishing(
+  appointmentId: number
+) {
+  setRemovingAppointmentId(appointmentId);
 
+  const supabase = createClient();
+
+  const { error } = await supabase.rpc(
+    "unpublish_my_appointment",
+    {
+      p_appointment_id: appointmentId,
+    }
+  );
+
+  if (error) {
+    console.error(
+      "Unpublish appointment error:",
+      error
+    );
+
+    setRemovingAppointmentId(null);
+    return;
+  }
+
+  setActiveAppointments((current) =>
+    current.filter(
+      (appointment) =>
+        appointment.id !== appointmentId
+    )
+  );
+
+  setAppointmentToRemove(null);
+  setRemovingAppointmentId(null);
+}
   async function handleLogout() {
     const supabase = createClient();
 
@@ -342,38 +380,46 @@ export default function BusinessDashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="mt-5 space-y-3">
-              {activeAppointments.map((appointment) => (
-                <div
-                  key={appointment.id}
-                  className="rounded-2xl border border-slate-200 p-4"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h4 className="font-black">{appointment.service}</h4>
+          <div className="mt-5 space-y-3">
+  {activeAppointments.map((appointment) => (
+    <div
+      key={appointment.id}
+      className="rounded-2xl border border-slate-200 p-4"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h4 className="font-black">{appointment.service}</h4>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                        <span className="flex items-center gap-1">
-                          <CalendarDays size={15} />
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+            <span className="flex items-center gap-1">
+              <CalendarDays size={15} />
+              {formatAppointmentDate(appointment.starts_at)}
+            </span>
 
-                          {formatAppointmentDate(appointment.starts_at)}
-                        </span>
+            <span className="flex items-center gap-1">
+              <Clock3 size={15} />
+              {appointment.time}
+            </span>
 
-                        <span className="flex items-center gap-1">
-                          <Clock3 size={15} />
+            <span>{appointment.duration}</span>
+          </div>
+        </div>
 
-                          {appointment.time}
-                        </span>
+        <div className="font-black">₪{appointment.price}</div>
+      </div>
 
-                        <span>{appointment.duration}</span>
-                      </div>
-                    </div>
-
-                    <div className="font-black">₪{appointment.price}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <button
+        type="button"
+        onClick={() =>
+          setAppointmentToRemove(appointment)
+        }
+        className="mt-4 flex h-11 w-full items-center justify-center rounded-xl bg-red-50 text-sm font-black text-red-600 transition hover:bg-red-100"
+      >
+        הסר מהפרסום
+      </button>
+    </div>
+  ))}
+</div>
           )}
         </section>
 
@@ -437,15 +483,19 @@ export default function BusinessDashboardPage() {
                         <div className="font-black">₪{booking.price}</div>
 
                         <span
-                          className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-black ${
-                            booking.booking_status === "confirmed"
-                              ? "bg-green-50 text-green-700"
-                              : "bg-slate-100 text-slate-600"
-                          }`}
+                         className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-black ${
+  booking.booking_status === "confirmed"
+    ? "bg-green-50 text-green-700"
+    : booking.booking_status === "cancelled"
+      ? "bg-red-50 text-red-700"
+      : "bg-slate-100 text-slate-600"
+}`}
                         >
-                          {booking.booking_status === "confirmed"
-                            ? "מאושר"
-                            : booking.booking_status}
+                         {booking.booking_status === "confirmed"
+  ? "מאושר"
+  : booking.booking_status === "cancelled"
+    ? "בוטל"
+    : booking.booking_status}
                         </span>
                       </div>
                     </div>
@@ -476,6 +526,68 @@ export default function BusinessDashboardPage() {
           מעבר לצד הלקוח
         </button>
       </div>
+      {appointmentToRemove && (
+  <div className="fixed inset-0 z-100 flex items-end justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center">
+    <div
+      dir="rtl"
+      className="w-full max-w-md rounded-[30px] bg-white p-6 shadow-2xl"
+    >
+      <div className="text-center">
+        <h2 className="text-2xl font-black">
+          להסיר את התור מהפרסום?
+        </h2>
+
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          התור ל־
+          <span className="font-black text-slate-700">
+            {" "}
+            {appointmentToRemove.service}
+          </span>{" "}
+          יוסר מהאפליקציה ולא יהיה ניתן להזמין אותו.
+        </p>
+
+        <p className="mt-2 text-sm text-slate-500">
+          התור לא יימחק מהמערכת.
+        </p>
+      </div>
+
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            setAppointmentToRemove(null)
+          }
+          disabled={
+            removingAppointmentId ===
+            appointmentToRemove.id
+          }
+          className="h-13 rounded-2xl border border-slate-200 bg-white font-black text-slate-700"
+        >
+          חזרה
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            removeAppointmentFromPublishing(
+              appointmentToRemove.id
+            )
+          }
+          disabled={
+            removingAppointmentId ===
+            appointmentToRemove.id
+          }
+          className="h-13 rounded-2xl bg-red-600 font-black text-white disabled:opacity-60"
+        >
+          {removingAppointmentId ===
+          appointmentToRemove.id
+            ? "מסיר..."
+            : "כן, הסר מהפרסום"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </main>
   );
 }

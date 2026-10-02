@@ -1,128 +1,353 @@
+"use client";
+
 import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   CalendarDays,
-  CheckCircle2,
+  Check,
   Clock3,
+  LoaderCircle,
   MapPin,
-  Navigation,
+  PartyPopper,
 } from "lucide-react";
-import { appointments } from "../../../../data/appointments";
 
-type PageProps = {
-  params: Promise<{
-    id: string;
-  }>;
+import { createClient } from "../../../../lib/supabase/client";
+
+type Booking = {
+  booking_id: string;
+  appointment_id: number;
+  booking_status: string;
+  booked_at: string;
+
+  service: string;
+  category: string;
+  business_name: string;
+
+  starts_at: string | null;
+  appointment_time: string;
+  duration: string;
+
+  area: string | null;
+  address: string | null;
+
+  price: number;
+  old_price: number | null;
+
+  description: string | null;
+  is_available: boolean;
 };
 
-export default async function SuccessPage({ params }: PageProps) {
-  const { id } = await params;
+export default function BookingSuccessPage() {
+  const params = useParams<{ id: string }>();
 
-  const appointment = appointments.find(
-    (item) => item.id === Number(id)
-  );
+  const appointmentId = Number(params.id);
 
-  if (!appointment) {
+  const [booking, setBooking] = useState<Booking | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadBooking() {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase.rpc(
+        "get_my_bookings"
+      );
+
+      if (error) {
+        console.error("Success page booking error:", error);
+        setLoading(false);
+        return;
+      }
+
+      const currentBooking = (data ?? []).find(
+        (item: Booking) =>
+          Number(item.appointment_id) === appointmentId &&
+          item.booking_status === "confirmed"
+      );
+
+      setBooking(currentBooking ?? null);
+      setLoading(false);
+    }
+
+    loadBooking();
+  }, [appointmentId]);
+
+  function formatDate(startsAt: string | null) {
+    if (!startsAt) {
+      return null;
+    }
+
+    return new Intl.DateTimeFormat("he-IL", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    }).format(new Date(startsAt));
+  }
+
+  function formatTime(
+    startsAt: string | null,
+    fallbackTime: string
+  ) {
+    if (!startsAt) {
+      return fallbackTime;
+    }
+
+    return new Intl.DateTimeFormat("he-IL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(startsAt));
+  }
+
+  if (loading) {
     return (
       <main
         dir="rtl"
-        className="flex min-h-screen items-center justify-center bg-[#f6f8fb] p-4"
+        className="flex min-h-screen items-center justify-center bg-[#f5f7fb]"
       >
-        <div className="text-center">
-          <h1 className="text-2xl font-black">התור לא נמצא</h1>
+        <LoaderCircle
+          size={30}
+          className="animate-spin text-blue-600"
+        />
+      </main>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4 text-slate-950"
+      >
+        <div className="w-full max-w-md text-center">
+          <h1 className="text-2xl font-black">
+            לא מצאנו את ההזמנה
+          </h1>
+
+          <p className="mt-2 text-slate-500">
+            אפשר לבדוק את כל ההזמנות שלך בעמוד ההזמנות.
+          </p>
 
           <Link
-            href="/"
-            className="mt-4 inline-block font-black text-blue-600"
+            href="/bookings"
+            className="mt-6 inline-flex h-13 items-center justify-center rounded-2xl bg-blue-600 px-6 font-black text-white"
           >
-            חזרה לעמוד הבית
+            ההזמנות שלי
           </Link>
         </div>
       </main>
     );
   }
 
+  const date = formatDate(booking.starts_at);
+
+  const time = formatTime(
+    booking.starts_at,
+    booking.appointment_time
+  );
+
   return (
     <main
       dir="rtl"
-      className="min-h-screen bg-[#f6f8fb] px-4 py-10 text-slate-950"
+      className="min-h-screen bg-[#f5f7fb] px-4 py-10 text-slate-950"
     >
-      <div className="mx-auto max-w-xl">
-        <section className="rounded-[30px] border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-50 text-green-600">
-            <CheckCircle2 size={42} />
+      <style>{`
+        @keyframes successPop {
+          0% {
+            opacity: 0;
+            transform: scale(0.55);
+          }
+
+          65% {
+            opacity: 1;
+            transform: scale(1.12);
+          }
+
+          100% {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+
+        @keyframes successFade {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .success-pop {
+          animation: successPop 500ms cubic-bezier(.2,.8,.2,1) both;
+        }
+
+        .success-fade {
+          animation: successFade 500ms 180ms ease both;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .success-pop,
+          .success-fade {
+            animation: none;
+          }
+        }
+      `}</style>
+
+      <div className="mx-auto w-full max-w-md">
+        {/* Success */}
+        <section className="text-center">
+          <div className="success-pop mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-green-500 text-white shadow-lg shadow-green-500/20">
+            <Check size={48} strokeWidth={3} />
           </div>
 
-          <h1 className="mt-5 text-3xl font-black">
-            ההזמנה אושרה
-          </h1>
+          <div className="success-fade">
+            <div className="mt-5 flex items-center justify-center gap-2 text-green-600">
+              <PartyPopper size={18} />
 
-          <p className="mt-2 leading-7 text-slate-500">
-            התור נשמר עבורך ב-FreeSpot.
-          </p>
+              <span className="text-sm font-black">
+                התור שלך!
+              </span>
+            </div>
 
-          <div className="mt-7 rounded-3xl bg-slate-50 p-5 text-right">
-            <p className="text-xs font-black text-blue-600">
-              {appointment.category}
+            <h1 className="mt-2 text-3xl font-black">
+              ההזמנה בוצעה בהצלחה
+            </h1>
+
+            <p className="mt-2 leading-7 text-slate-500">
+              שמרנו עבורך את התור. כל הפרטים נמצאים גם
+              בעמוד ההזמנות שלך.
+            </p>
+          </div>
+        </section>
+
+        {/* Appointment */}
+        <section className="success-fade mt-8 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
+          <div className="bg-slate-950 p-5 text-white">
+            <p className="text-sm font-bold text-slate-300">
+              {booking.business_name}
             </p>
 
-            <h2 className="mt-1 text-xl font-black">
-              {appointment.service}
+            <h2 className="mt-1 text-2xl font-black">
+              {booking.service}
             </h2>
+          </div>
 
-            <p className="mt-1 font-bold text-slate-500">
-              {appointment.business}
-            </p>
+          <div className="p-5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <CalendarDays
+                  size={19}
+                  className="text-blue-600"
+                />
 
-            <div className="mt-5 space-y-3">
-              <div className="flex items-center gap-3">
-                <CalendarDays size={18} className="text-blue-600" />
+                <p className="mt-2 text-xs text-slate-400">
+                  תאריך
+                </p>
 
-                <div>
-                  <p className="text-xs text-slate-400">תאריך</p>
-                  <p className="font-black">היום</p>
-                </div>
+                <p className="mt-1 font-black">
+                  {date ?? "היום"}
+                </p>
               </div>
 
-              <div className="flex items-center gap-3">
-                <Clock3 size={18} className="text-blue-600" />
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <Clock3
+                  size={19}
+                  className="text-blue-600"
+                />
 
-                <div>
-                  <p className="text-xs text-slate-400">
-                    שעה ומשך
-                  </p>
+                <p className="mt-2 text-xs text-slate-400">
+                  שעה
+                </p>
 
-                  <p className="font-black">
-                    {appointment.time} · {appointment.duration}
-                  </p>
-                </div>
-              </div>
+                <p className="mt-1 font-black">
+                  {time}
+                </p>
 
-              <div className="flex items-center gap-3">
-                <MapPin size={18} className="text-blue-600" />
-
-                <div>
-                  <p className="text-xs text-slate-400">מיקום</p>
-
-                  <p className="font-black">
-                    {appointment.address}
-                  </p>
-                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {booking.duration}
+                </p>
               </div>
             </div>
+
+            {(booking.address || booking.area) && (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-blue-50 p-4">
+                <MapPin
+                  size={20}
+                  className="mt-0.5 shrink-0 text-blue-600"
+                />
+
+                <div>
+                  <p className="text-xs font-bold text-blue-500">
+                    כתובת
+                  </p>
+
+                  <p className="mt-1 font-black text-slate-800">
+                    {booking.address}
+                    {booking.address && booking.area
+                      ? ", "
+                      : ""}
+                    {booking.area}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex items-end justify-between border-t border-slate-100 pt-5">
+              <div>
+               <p className="text-xs font-bold text-slate-400">
+  מחיר התור
+</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-3xl font-black">
+                    ₪{booking.price}
+                  </span>
+
+                  {booking.old_price && (
+                    <span className="text-sm text-slate-400 line-through">
+                      ₪{booking.old_price}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-black text-green-700">
+                מאושר
+              </span>
+            </div>
           </div>
-
-          <button className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 py-3.5 text-sm font-black transition hover:bg-slate-50">
-            <Navigation size={17} className="text-blue-600" />
-            פתח ניווט
-          </button>
-
-          <Link
-            href="/"
-            className="mt-3 block w-full rounded-2xl bg-blue-600 py-4 font-black text-white transition hover:bg-blue-700"
-          >
-            חזרה למסך הבית
-          </Link>
         </section>
+
+       {/* Actions */}
+<div className="mt-5 grid grid-cols-2 gap-3">
+  <Link
+    href="/"
+    replace
+    className="flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-center font-black text-slate-700 transition hover:bg-slate-50"
+  >
+    חזרה לבית
+  </Link>
+
+  <Link
+    href="/bookings"
+    replace
+    className="flex h-14 items-center justify-center rounded-2xl bg-blue-600 px-3 text-center font-black text-white transition hover:bg-blue-700"
+  >
+    ההזמנות שלי
+  </Link>
+</div>
       </div>
     </main>
   );
