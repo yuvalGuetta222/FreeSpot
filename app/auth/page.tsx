@@ -38,7 +38,7 @@ export default function AuthPage() {
 
     const supabase = createClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -54,12 +54,32 @@ export default function AuthPage() {
       return;
     }
 
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      console.error("Profile error:", profileError);
+
+      setMessage("התחברת, אבל לא הצלחנו לזהות את סוג החשבון.");
+
+      setLoading(false);
+      return;
+    }
+
     setLoading(false);
     setSuccess(true);
 
     // נותן לאנימציית ההצלחה להופיע לפני המעבר
     setTimeout(() => {
-      router.replace("/");
+      if (profile.role === "business") {
+        router.replace("/business");
+      } else {
+        router.replace("/");
+      }
+
       router.refresh();
     }, 850);
   }

@@ -38,17 +38,18 @@ export async function updateSession(request: NextRequest) {
 
   const { data, error } = await supabase.auth.getClaims();
 
-  const isLoggedIn = !error && Boolean(data?.claims?.sub);
+  const userId = data?.claims?.sub;
+  const isLoggedIn = !error && Boolean(userId);
 
   const pathname = request.nextUrl.pathname;
 
   const isAuthRoute = pathname.startsWith("/auth");
+  const isBusinessRoute = pathname.startsWith("/business");
 
-  // לא מחובר ומנסה להיכנס לאפליקציה
-  if (!isLoggedIn && !isAuthRoute) {
+  function redirectTo(path: string) {
     const url = request.nextUrl.clone();
 
-    url.pathname = "/auth";
+    url.pathname = path;
     url.search = "";
 
     const redirectResponse = NextResponse.redirect(url);
@@ -68,20 +69,51 @@ export async function updateSession(request: NextRequest) {
     return redirectResponse;
   }
 
-  // כבר מחובר ומנסה לפתוח שוב את מסך ההתחברות
-  if (isLoggedIn && pathname === "/auth") {
-    const url = request.nextUrl.clone();
+  // לא מחובר ומנסה להיכנס לאפליקציה
+  if (!isLoggedIn && !isAuthRoute) {
+    return redirectTo("/auth");
+  }
 
-    url.pathname = "/";
-    url.search = "";
+  // מסכי auth נשארים פתוחים כדי לא לשבור callback / verification
+  if (!isLoggedIn) {
+    return supabaseResponse;
+  }
 
-    const redirectResponse = NextResponse.redirect(url);
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId!)
+    .maybeSingle();
 
-    supabaseResponse.cookies.getAll().forEach((cookie) => {
-      redirectResponse.cookies.set(cookie);
-    });
+  if (profileError) {
+    console.error("Proxy profile error:", profileError);
 
-    return redirectResponse;
+    return supabaseResponse;
+  }
+
+  const role = profile?.role;
+
+  // משתמש מחובר שנכנס למסך ההתחברות הראשי
+  if (pathname === "/auth") {
+    if (role === "business") {
+      return redirectTo("/business");
+    }
+
+    if (role === "customer") {
+      return redirectTo("/");
+    }
+
+    return supabaseResponse;
+  }
+
+  // חשבון עסקי יכול לעבוד רק בצד העסקי
+  if (role === "business" && !isBusinessRoute && !isAuthRoute) {
+    return redirectTo("/business");
+  }
+
+  // חשבון לקוח לא יכול להיכנס לצד העסקי
+  if (role === "customer" && isBusinessRoute) {
+    return redirectTo("/");
   }
 
   return supabaseResponse;

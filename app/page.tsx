@@ -20,7 +20,6 @@ import {
   Sparkles,
   Star,
   UserRound,
-  Building2,
 } from "lucide-react";
 
 type Appointment = {
@@ -163,7 +162,6 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("הכל");
   const favoriteLocksRef = useRef<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [isBusinessUser, setIsBusinessUser] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedBusinessId = searchParams.get("business");
@@ -214,35 +212,7 @@ export default function HomePage() {
 
     loadFavorites();
   }, []);
-  useEffect(() => {
-    async function checkUserRole() {
-      const supabase = createClient();
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setIsBusinessUser(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (error) {
-        console.error("Error loading user role:", error);
-        return;
-      }
-
-      setIsBusinessUser(data.role === "business");
-    }
-
-    checkUserRole();
-  }, []);
   useEffect(() => {
     async function loadPreferences() {
       const supabase = createClient();
@@ -902,16 +872,7 @@ export default function HomePage() {
             <Heart size={21} />
             <span className="text-[11px] font-bold">מועדפים</span>
           </Link>
-          {isBusinessUser && (
-            <Link
-              href="/business"
-              className="flex flex-col items-center gap-1 text-slate-400"
-            >
-              <Building2 size={21} />
-
-              <span className="text-[11px] font-bold">העסק שלי</span>
-            </Link>
-          )}
+        
           <Link
             href="/profile"
             className="flex flex-col items-center gap-1 text-slate-400"
