@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "../../lib/supabase/client";
+import CustomerBottomNav from "../../components/customer/CustomerBottomNav";
 
 type UserInfo = {
   email: string;
@@ -202,6 +203,7 @@ export default function ProfilePage() {
           FreeSpot · גרסת פיתוח
         </p>
       </div>
+      <CustomerBottomNav />
     </main>
   );
 }

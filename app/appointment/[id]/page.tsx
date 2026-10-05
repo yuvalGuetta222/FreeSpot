@@ -121,31 +121,47 @@ export default function AppointmentPage() {
 
       setAppointment(data);
 
-      if (user) {
-      if (data.business_id) {
-  const { data: favoriteData } = await supabase
-    .from("business_favorites")
-    .select("id")
-    .eq("business_id", data.business_id)
-    .maybeSingle();
+  if (user) {
+  const { data: favoriteData, error: favoriteError } =
+    await supabase
+      .from("favorites")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("appointment_id", appointmentId)
+      .maybeSingle();
+
+  if (favoriteError) {
+    console.error(
+      "Appointment favorite load error:",
+      favoriteError,
+    );
+  }
 
   setIsFavorite(Boolean(favoriteData));
+
+  const { data: bookingData, error: bookingError } =
+    await supabase
+      .from("bookings")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("appointment_id", appointmentId)
+      .eq("status", "confirmed")
+      .maybeSingle();
+
+  if (bookingError) {
+    console.error(
+      "Appointment booking check error:",
+      bookingError,
+    );
+  }
+
+  setAlreadyBookedByMe(Boolean(bookingData));
 }
 
-        const { data: bookingData } = await supabase
-          .from("bookings")
-          .select("id")
-          .eq("appointment_id", appointmentId)
-          .eq("status", "confirmed")
-          .maybeSingle();
+setLoading(false);
+}
 
-        setAlreadyBookedByMe(Boolean(bookingData));
-      }
-
-      setLoading(false);
-    }
-
-    loadAppointment();
+loadAppointment();
   }, [appointmentId]);
 
   function isAppointmentAvailable() {
@@ -195,11 +211,7 @@ export default function AppointmentPage() {
   }
 
 async function toggleFavorite() {
-  if (
-    !appointment ||
-    !appointment.business_id ||
-    favoriteLoading
-  ) {
+  if (!appointment || favoriteLoading) {
     return;
   }
 
@@ -219,17 +231,15 @@ async function toggleFavorite() {
 
   if (isFavorite) {
     const { error } = await supabase
-      .from("business_favorites")
+      .from("favorites")
       .delete()
-      .eq(
-        "business_id",
-        appointment.business_id
-      );
+      .eq("user_id", user.id)
+      .eq("appointment_id", appointment.id);
 
     if (error) {
       console.error(
-        "Remove business favorite error:",
-        error
+        "Remove appointment favorite error:",
+        error,
       );
 
       setFavoriteLoading(false);
@@ -239,22 +249,16 @@ async function toggleFavorite() {
     setIsFavorite(false);
   } else {
     const { error } = await supabase
-      .from("business_favorites")
+      .from("favorites")
       .insert({
-        business_id:
-          appointment.business_id,
+        user_id: user.id,
+        appointment_id: appointment.id,
       });
 
-    if (error) {
-      if (error.code === "23505") {
-        setIsFavorite(true);
-        setFavoriteLoading(false);
-        return;
-      }
-
+    if (error && error.code !== "23505") {
       console.error(
-        "Add business favorite error:",
-        error
+        "Add appointment favorite error:",
+        error,
       );
 
       setFavoriteLoading(false);

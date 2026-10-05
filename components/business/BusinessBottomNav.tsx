@@ -7,6 +7,7 @@ import {
   CalendarPlus,
   LayoutDashboard,
   BriefcaseBusiness,
+  Store,
 } from "lucide-react";
 
 export default function BusinessBottomNav() {
@@ -16,6 +17,8 @@ export default function BusinessBottomNav() {
   const isAppointments = pathname === "/business/appointments";
   const isPublish = pathname === "/business/appointments/new";
   const isServices = pathname.startsWith("/business/services");
+  const isProfile =
+  pathname.startsWith("/business/profile");
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white">
@@ -58,6 +61,17 @@ export default function BusinessBottomNav() {
           <BriefcaseBusiness size={22} />
           <span>שירותים</span>
         </Link>
+        <Link
+  href="/business/profile"
+  className={`flex flex-col items-center gap-1 px-3 py-2 text-xs font-bold ${
+    isProfile
+      ? "text-blue-600"
+      : "text-slate-400"
+  }`}
+>
+  <Store size={22} />
+  <span>פרופיל</span>
+</Link>
       </div>
     </nav>
   );

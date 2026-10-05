@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "../../lib/supabase/client";
+import CustomerBottomNav from "../../components/customer/CustomerBottomNav";
 
 type Booking = {
   booking_id: string;
@@ -438,6 +439,7 @@ setCancellingId(null);
     </div>
   </div>
 )}
+<CustomerBottomNav />
     </main>
   );
 }

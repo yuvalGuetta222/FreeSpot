@@ -10,7 +10,6 @@ import {
   Plus,
   Save,
   Scissors,
-  X,
 } from "lucide-react";
 
 import { createClient } from "../../../lib/supabase/client";
@@ -263,31 +262,6 @@ export default function BusinessServicesPage() {
     setSavingId(null);
   }
 
-  async function removeService(serviceId: string) {
-    setSavingId(serviceId);
-    setMessage("");
-
-    const supabase = createClient();
-
-    const { error } = await supabase
-      .from("business_services")
-      .delete()
-      .eq("id", serviceId);
-
-    if (error) {
-      console.error("Remove service error:", error);
-      setMessage("לא הצלחנו להסיר את השירות.");
-      setSavingId(null);
-      return;
-    }
-
-    setServices((current) =>
-      current.filter((service) => service.id !== serviceId),
-    );
-
-    setSavingId(null);
-  }
-
   if (loading) {
     return (
       <main
@@ -460,15 +434,7 @@ export default function BusinessServicesPage() {
                       נשמר לפרסום מהיר
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => removeService(service.id)}
-                      disabled={savingId === service.id}
-                      className="flex items-center gap-1 text-xs font-black text-red-500"
-                    >
-                      <X size={14} />
-                      הסר
-                    </button>
+      
                   </div>
                 </article>
               );

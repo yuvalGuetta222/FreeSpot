@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "../lib/supabase/client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import CustomerBottomNav from "../components/customer/CustomerBottomNav";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { categories as appCategories } from "../data/categories";
 import {
   Bell,
@@ -11,7 +12,6 @@ import {
   ChevronDown,
   Clock3,
   Heart,
-  Home,
   MapPin,
   Navigation,
   Search,
@@ -19,7 +19,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
-  UserRound,
 } from "lucide-react";
 
 type Appointment = {
@@ -158,17 +157,17 @@ function formatAppointmentUrgency(
   return days === 1 ? "מתחיל מחר" : `מתחיל בעוד ${days} ימים`;
 }
 
-export default function HomePage() {
+function HomePageContent() {
   const [selectedCategory, setSelectedCategory] = useState("הכל");
-  const favoriteLocksRef = useRef<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
+const favoriteLocksRef = useRef<Set<number>>(new Set());
+const [search, setSearch] = useState("");
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedBusinessId = searchParams.get("business");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<number[]>([]);
   const [preferredArea, setPreferredArea] = useState<string | null>(null);
 
   const [preferredCategories, setPreferredCategories] = useState<string[]>([]);
@@ -181,37 +180,42 @@ export default function HomePage() {
   }, []);
 
   // ואז ממשיך מה שכבר יש לך
-  useEffect(() => {
-    async function loadFavorites() {
-      const supabase = createClient();
+ useEffect(() => {
+  async function loadFavorites() {
+    const supabase = createClient();
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      if (!user) {
-        setFavorites([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("business_favorites")
-        .select("business_id");
-
-      if (error) {
-        console.error("Error loading business favorites:", error);
-        return;
-      }
-
-      setFavorites(
-        (data ?? []).map(
-          (favorite: { business_id: string }) => favorite.business_id,
-        ),
-      );
+    if (!user) {
+      setFavorites([]);
+      return;
     }
 
-    loadFavorites();
-  }, []);
+    const { data, error } = await supabase
+      .from("favorites")
+      .select("appointment_id")
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error(
+        "Error loading appointment favorites:",
+        error,
+      );
+      return;
+    }
+
+    setFavorites(
+      (data ?? []).map(
+        (favorite: { appointment_id: number }) =>
+          Number(favorite.appointment_id),
+      ),
+    );
+  }
+
+  loadFavorites();
+}, []);
 
   useEffect(() => {
     async function loadPreferences() {
@@ -418,64 +422,90 @@ export default function HomePage() {
     return areaMatch || categoryMatch;
   });
 
-  async function toggleFavorite(businessId: string) {
-    if (!businessId || favoriteLocksRef.current.has(businessId)) {
+async function toggleFavorite(
+  appointmentId: number,
+) {
+  if (
+    !appointmentId ||
+    favoriteLocksRef.current.has(appointmentId)
+  ) {
+    return;
+  }
+
+  favoriteLocksRef.current.add(appointmentId);
+
+  try {
+    const supabase = createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/auth");
       return;
     }
 
-    favoriteLocksRef.current.add(businessId);
+    const isFavorite =
+      favorites.includes(appointmentId);
 
-    try {
-      const supabase = createClient();
+    if (isFavorite) {
+      const { error } = await supabase
+        .from("favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("appointment_id", appointmentId);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.push("/auth");
+      if (error) {
+        console.error(
+          "Remove appointment favorite error:",
+          error,
+        );
         return;
       }
 
-      const isFavorite = favorites.includes(businessId);
-
-      if (isFavorite) {
-        const { error } = await supabase
-          .from("business_favorites")
-          .delete()
-          .eq("business_id", businessId);
-
-        if (error) {
-          console.error("Remove business favorite error:", error);
-          return;
-        }
-
-        setFavorites((current) => current.filter((id) => id !== businessId));
-      } else {
-        const { error } = await supabase.from("business_favorites").insert({
-          business_id: businessId,
+      setFavorites((current) =>
+        current.filter(
+          (id) => id !== appointmentId,
+        ),
+      );
+    } else {
+      const { error } = await supabase
+        .from("favorites")
+        .insert({
+          user_id: user.id,
+          appointment_id: appointmentId,
         });
 
-        if (error) {
-          if (error.code === "23505") {
-            setFavorites((current) =>
-              current.includes(businessId) ? current : [...current, businessId],
-            );
-            return;
-          }
-
-          console.error("Add business favorite error:", error);
+      if (error) {
+        if (error.code === "23505") {
+          setFavorites((current) =>
+            current.includes(appointmentId)
+              ? current
+              : [...current, appointmentId],
+          );
           return;
         }
 
-        setFavorites((current) =>
-          current.includes(businessId) ? current : [...current, businessId],
+        console.error(
+          "Add appointment favorite error:",
+          error,
         );
+        return;
       }
-    } finally {
-      favoriteLocksRef.current.delete(businessId);
+
+      setFavorites((current) =>
+        current.includes(appointmentId)
+          ? current
+          : [...current, appointmentId],
+      );
     }
+  } finally {
+    favoriteLocksRef.current.delete(
+      appointmentId,
+    );
   }
+}
 
   return (
     <main dir="rtl" className="min-h-screen bg-[#f6f8fb] pb-32 text-slate-950">
@@ -663,7 +693,8 @@ export default function HomePage() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredAppointments.map((appointment) => {
-                const isFavorite = favorites.includes(appointment.businessId);
+                const isFavorite =
+  favorites.includes(appointment.id);
                 const matchesPreferredArea =
                   preferredArea !== null &&
                   appointment.area.trim().toLowerCase() ===
@@ -695,11 +726,13 @@ export default function HomePage() {
 
                       <button
                         aria-label={
-                          isFavorite
-                            ? "הסר את העסק מהמועדפים"
-                            : "שמור את העסק במועדפים"
-                        }
-                        onClick={() => toggleFavorite(appointment.businessId)}
+  isFavorite
+    ? "הסר את התור מהמועדפים"
+    : "שמור את התור במועדפים"
+}
+                        onClick={() =>
+  toggleFavorite(appointment.id)
+}
                         className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-sm transition hover:scale-105"
                       >
                         <Heart
@@ -850,38 +883,23 @@ export default function HomePage() {
       </div>
 
       {/* Mobile bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-2 pb-[max(9px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl md:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-4">
-          <button className="flex flex-col items-center gap-1 text-blue-600">
-            <Home size={21} />
-            <span className="text-[11px] font-black">בית</span>
-          </button>
-
-          <Link
-            href="/bookings"
-            className="flex flex-col items-center gap-1 text-slate-400"
-          >
-            <CalendarDays size={21} />
-            <span className="text-[11px] font-bold">הזמנות</span>
-          </Link>
-
-          <Link
-            href="/favorites"
-            className="flex flex-col items-center gap-1 text-slate-400"
-          >
-            <Heart size={21} />
-            <span className="text-[11px] font-bold">מועדפים</span>
-          </Link>
-        
-          <Link
-            href="/profile"
-            className="flex flex-col items-center gap-1 text-slate-400"
-          >
-            <UserRound size={21} />
-            <span className="text-[11px] font-bold">פרופיל</span>
-          </Link>
-        </div>
-      </nav>
+      <CustomerBottomNav />
     </main>
+  );
+}
+export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <main
+          dir="rtl"
+          className="flex min-h-screen items-center justify-center bg-[#f5f7fb]"
+        >
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+        </main>
+      }
+    >
+      <HomePageContent />
+    </Suspense>
   );
 }
